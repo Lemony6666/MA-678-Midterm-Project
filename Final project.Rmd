@@ -1,0 +1,219 @@
+---
+title: "678 Final"
+author: "Yuanming LENG"
+date: "11/30/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(flextable)
+library(dplyr)
+library(GGally)
+library(ggplot2)
+source("Function.R")
+```
+
+# Abstract
+# Introduction
+/
+/
+A stroke is a medical condition in which poor blood flow to the brain causes cell death. Signs and symptoms of a stroke may include an inability to move or feel on one side of the body, problems understanding or speaking, dizziness, or loss of vision to one side. According to the World Health Organization (WHO), stroke is the 2nd leading cause of death globally, responsible for approximately 11% of total deaths.
+In this project, I would like to predict the probability a patient gets a stroke based on a data set I get from the Kaggle website. The data set contains each patient's information, including gender, age, marital condition, work type, residence type, average glucose level, BMI, smoking status, and whether suffer from hypertension, heart_disease. And the outcome is a binary column indicating whether each patient gets a stroke.
+I believe this project can give me a better understanding of the main risk factors leading to stroke while helping people to improve their health conditions and prevent getting a stroke.
+
+# Method
+## Data Cleaning and Processing
+
+
+
+## Exploratory Data Analysis
+## Model Fitting
+# Result
+# Discussion
+# Citation
+# EDA
+
+```{r}
+stroke <- read.csv("healthcare-dataset-stroke-data.csv")
+flextable(head(stroke)) %>%
+  theme_zebra()
+a <- c(2,4,5,6,7,8,11,12)
+for(i in 1:length(a)){
+  stroke[, a[i]] <- (as.factor(stroke[, a[i]]))
+}
+a <- c(3,9,10)
+for(i in 1:length(a)){
+  stroke[, a[i]] <- as.numeric(stroke[, a[i]])
+}
+stroke <- na.omit(stroke)
+names(stroke)[12] <- "weather_stroke"
+
+```
+
+By testing the difference between two groups (people with stroke & with no stroke) for each variable, the table supports that gender and Residence_type have no significant difference between the two groups. However, an essay from CDC states that women exposure a higher risk of stroke with age increasing. Therefore, the only reason is that this dataset have no enough information to support that gender will introduce difference of stroke. 
+
+```{r}
+Q <- quantile(stroke$bmi, probs=c(.25, .75), na.rm = T)
+iqr <- IQR(stroke$bmi, na.rm = T)
+df3 <- stroke%>% filter(bmi > (Q[1] - 1.5*iqr) & 
+                       bmi < (Q[2] + 1.5*iqr))  
+
+Q <- quantile(df3$avg_glucose_level, probs=c(.25, .75), na.rm = T)
+iqr <- IQR(df3$avg_glucose_level, na.rm = T)
+df3 <- df3%>% filter(avg_glucose_level > (Q[1] - 1.5*iqr) & 
+                       avg_glucose_level < (Q[2] + 1.5*iqr)) 
+
+Q <- quantile(df3$age, probs=c(.25, .75), na.rm = T)
+iqr <- IQR(df3$age, na.rm = T)
+df3 <- df3%>% filter(age > (Q[1] - 1.5*iqr) & 
+                       age < (Q[2] + 1.5*iqr)) 
+
+library(PMCMR)
+library(officer)
+Compare_Dunn_two(df3[,c(12,2:11)])
+df3$age_group[df3$age <= 20] <- "less than 20"
+df3$age_group[df3$age > 20 & df3$age <= 40] <- "Between 20 to 40"
+df3$age_group[df3$age > 40 & df3$age <= 50] <- "Between 40 to 50"
+df3$age_group[df3$age > 50 & df3$age <= 60] <- "Between 50 to 60"
+df3$age_group[df3$age > 60 & df3$age <= 70] <- "Between 60 to 70"
+df3$age_group[df3$age > 70 & df3$age <= 80] <- "Between 70 to 80"
+df3$age_group[df3$age > 80] <- "more than 80"
+
+```
+
+```{r message=TRUE}
+# (ggpairs(stroke, columns=c(3:5), aes(colour = stroke, alpha = 0.8)))
+# ggplot(data = stroke) + geom_bar(aes(x = age, fill = stroke, alpha = 0.8), width = 1) + facet_grid(heart_disease~ hypertension) 
+  ggplot(data = df3, aes(log(avg_glucose_level), y = weather_stroke,color=age_group)) +
+  geom_point(aes(color = weather_stroke),alpha = .6, position = "jitter") +
+  geom_smooth(formula=y~x,method="lm",aes(group=age_group),se=F) +
+  labs(title="Relationship between Stoke & Average glucose level for different 
+       age group wether have heart disease",
+       x="Average Glucose Level", y = "Stroke") + facet_wrap( ~ heart_disease)
+  
+  ggplot(data = df3, aes(log(bmi), y = weather_stroke,color=age_group)) +
+  geom_point(aes(color = weather_stroke),alpha = .6, position = "jitter", show.legend = F) +
+     geom_smooth(formula=y~x,method="lm",aes(group=age_group),se=F)+
+  ylab("Stroke ") +
+  labs(title="Relationship between Stoke & BMI for different 
+       age group wether have heart disease",
+       x="BMI", y = "Stroke")+ facet_wrap( ~ heart_disease, scales = "free")
+```
+
+
+```{r}
+set.seed(123)
+ind <- sample(2, nrow(df3), replace = TRUE, prob = c(0.8, 0.2))
+set.seed(400)
+train <- na.omit(df3[ind == 1, ])
+test <- df3[ind == 2, ]
+
+library(lme4)
+model1 <- glmer(weather_stroke ~ hypertension + heart_disease + ever_married + work_type + avg_glucose_level + bmi + smoking_status + (1|age_group), family = binomial(link = "logit"), data = df3) 
+library(VGAM)
+summ(model1, exp = T)
+plot(allEffects(model1))
+summary(model1)
+# model2 <- glmer(weather_stroke ~ heart_disease + ever_married + work_type + avg_glucose_level + bmi + smoking_status + (1+hypertension  |age_group), family = binomial(link = "logit"), data = df3) 
+# summary(model2)
+
+model3 <- glmer(weather_stroke ~  avg_glucose_level + bmi  + (1+ hypertension+ heart_disease+ ever_married + work_type+ smoking_status|age_group) , family = binomial(link = "logit"), data = train) 
+summary(model3)
+model4 <- glmer(weather_stroke ~   hypertension +ever_married + heart_disease   + smoking_status + (1 + log(avg_glucose_level) + log(bmi)|age_group), family = binomial(link = "logit"), data = train)
+summary(model4)
+model5 <- glmer(weather_stroke ~   hypertension + ever_married   + smoking_status + (-1 + log(avg_glucose_level) + log(bmi)|age_group) + (1|heart_disease), family = binomial(link = "logit"), data = train)
+summary(model5)
+model6 <- glmer(weather_stroke ~   hypertension+ ever_married  + heart_disease+ smoking_status + (-1 + log(avg_glucose_level) + log(bmi)|age_group) , family = binomial(link = "logit"), data = train)
+summary(model6)
+
+model7 <- glmer(weather_stroke ~   hypertension+ ever_married  + heart_disease + (-1 + log(avg_glucose_level) + log(bmi)|age_group) , family = binomial(link = "logit"), data = train)
+summary(model7)
+
+model8 <- glmer(weather_stroke ~   hypertension  + heart_disease + log(avg_glucose_level)+ (-1  + log(bmi)|age_group) , family = binomial(link = "logit"), data = train)
+summary(model8)
+
+```
+
+```{r}
+
+
+
+```
+
+```{r}
+library(arm)
+
+binnedplot(fitted(model8),resid(model8,type="response"),main="Binned residual plot for model6")
+binnedplot(fitted(model7),resid(model7,type="response"),main="Binned residual plot for model6")
+
+```
+
+
+```{r}
+library(caret)
+pred <- ifelse(predict(model7, newdata = test, type = "response") >= .2, "Yes", "No")
+pred <- factor(pred,  levels = c('Yes','No'), labels=c('Yes','No'))
+test$weather_stroke <- factor(test$weather_stroke, levels = c(1, 0), labels=c('Yes','No'))
+confusionMatrix(pred, test$weather_stroke)
+
+```
+
+```{r}
+library(pROC)
+
+invisible(plot(roc(train$weather_stroke,fitted(model7)), print.thres = c(.1, .5), col = "red", main = "ROC curves: logistic model 7 (red) vs. logistic model 2 (blue)" ,print.auc = T))
+invisible(plot(roc(train$weather_stroke,
+                   fitted(model8)),
+               col = "blue", 
+               main = "ROC curves: logistic model 1 (red) vs. logistic model 2 (blue)",print.auc = T, add = T))
+
+
+
+
+```
+
+
+
+
+
+
+# Appendix
+
+## data cleaning
+
+### removing outliers
+
+```{r}
+# visualize the new dataset without outliers
+par(mfrow=c(2,2))
+options(repr.plot.width=12, repr.plot.height=6)
+boxplot(stroke$bmi, col = "grey40", horizontal = T, 
+        main = "BMI - Before Removing Outliers")
+boxplot(stroke$avg_glucose_level, col = "grey40", horizontal = T, 
+        main = "Average Glucose Level- Before")
+boxplot(df3$bmi,  horizontal = T, 
+        main = "BMI - After Removing Outliers")
+boxplot(df3$avg_glucose_level, horizontal = T, 
+        main = "Average Glucose Level- After")
+```
+
+```{r}
+# heart_disease, ever-married, work_type, avg_gluse, bmi, age(every 20), age:married
+
+for (i in 2:6) {
+  for(j in 1:(12-i)){
+    print(ggpairs(stroke, columns=c(i,(i+j)), aes(colour = stroke, alpha = 0.8)))
+  }
+}
+
+```
+
+```{r}
+library(sjPlot)
+library(sjmisc)
+library(lme4)
+
+sjmisc::sjp.lmer(model4, type = "re.qq")
+```
+
