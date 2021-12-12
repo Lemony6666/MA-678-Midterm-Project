@@ -148,7 +148,7 @@ Compare_Dunn_two(df3[,c(12,2:11)])
 The table uses a pairwise test for multiple comparisons of mean rank sums (Dunn's-Test) to check whether there is a significant difference between two groups (people with stroke & with no stroke) for each variable. The table supports that gender and Residence_type have no significant difference between the two groups. So I will drop these two variables in the model.
 
 
-```{r fig.width=6, fig.height=3}
+```{r fig.width=16, fig.height=8}
 # (ggpairs(stroke, columns=c(3:5), aes(colour = stroke, alpha = 0.8)))
 # ggplot(data = stroke) + geom_bar(aes(x = age, fill = stroke, alpha = 0.8), width = 1) + facet_grid(heart_disease~ hypertension) 
   ggplot(data = df3, aes(log(avg_glucose_level), y = weather_stroke,color=age_group)) +
@@ -163,7 +163,7 @@ The table uses a pairwise test for multiple comparisons of mean rank sums (Dunn'
 The figure shows the relationship between stroke and average glucose level for people with heart disease or not. We can see that the glucose level has a different trend for stroke for different age groups. Individuals who have an age over 80 have a distinct tendency compared with other age groups. Generally, there are different intercepts and slopes for every age group.
 
 
-```{r fig.width=6, fig.height=3}
+```{r fig.width=16, fig.height=8}
   ggplot(data = df3, aes(log(bmi), y = weather_stroke,color=age_group)) +
   geom_point(aes(color = weather_stroke),alpha = .6, position = "jitter", show.legend = F) +
      geom_smooth(formula=y~x,method="lm",aes(group=age_group),se=F)+
@@ -214,7 +214,7 @@ The -1.9 eaquals to $-3.2+ 0.76+ 0.54$.
 ## Model validation
 For check the model result, we plot the binned residual plot and ROC curve.
 
-```{r}
+```{r fig.width=16, fig.height=8}
 
 par(mfrow = c(1,2))
 binnedplot(fitted(model7),resid(model7,type="response"),main="Binned residual plot for model6")
@@ -276,15 +276,10 @@ boxplot(df3$avg_glucose_level, horizontal = T,
 ```
 
 ```{r}
-# heart_disease, ever-married, work_type, avg_gluse, bmi, age(every 20), age:married
-
-# for (i in 2:6) {
-#   for(j in 1:(12-i)){
-#     print(ggpairs(stroke, columns=c(i,(i+j)), aes(colour = stroke, alpha = 0.8)))
-#   }
-# }
+confusionMatrix(pred, test$weather_stroke)
 
 ```
+
 
 ## Model fit 
 
