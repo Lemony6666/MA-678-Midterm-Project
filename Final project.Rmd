@@ -1,43 +1,39 @@
 ---
-title: "678 Final"
+title: "MA678 Final Project"
 author: "Yuanming LENG"
 date: "11/30/2021"
 output: pdf_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(
+	echo = FALSE,
+	message = FALSE,
+	warning = FALSE, fig.width=6, fig.height=4
+)
 library(flextable)
 library(dplyr)
 library(GGally)
 library(ggplot2)
+library(gridExtra)
+library(pROC)
+library(PMCMR)
+library(officer)
+library(wesanderson)
+library(ggridges)
+library(ggpubr)
+library(VGAM)
+library(arm)
+library(caret)
+library(sjPlot)
+library(sjmisc)
+library(lme4)
+
 source("Function.R")
 ```
 
-# Abstract
-# Introduction
-/
-/
-A stroke is a medical condition in which poor blood flow to the brain causes cell death. Signs and symptoms of a stroke may include an inability to move or feel on one side of the body, problems understanding or speaking, dizziness, or loss of vision to one side. According to the World Health Organization (WHO), stroke is the 2nd leading cause of death globally, responsible for approximately 11% of total deaths.
-In this project, I would like to predict the probability a patient gets a stroke based on a data set I get from the Kaggle website. The data set contains each patient's information, including gender, age, marital condition, work type, residence type, average glucose level, BMI, smoking status, and whether suffer from hypertension, heart_disease. And the outcome is a binary column indicating whether each patient gets a stroke.
-I believe this project can give me a better understanding of the main risk factors leading to stroke while helping people to improve their health conditions and prevent getting a stroke.
-
-# Method
-## Data Cleaning and Processing
-
-
-
-## Exploratory Data Analysis
-## Model Fitting
-# Result
-# Discussion
-# Citation
-# EDA
-
 ```{r}
 stroke <- read.csv("healthcare-dataset-stroke-data.csv")
-flextable(head(stroke)) %>%
-  theme_zebra()
 a <- c(2,4,5,6,7,8,11,12)
 for(i in 1:length(a)){
   stroke[, a[i]] <- (as.factor(stroke[, a[i]]))
@@ -51,7 +47,18 @@ names(stroke)[12] <- "weather_stroke"
 
 ```
 
-By testing the difference between two groups (people with stroke & with no stroke) for each variable, the table supports that gender and Residence_type have no significant difference between the two groups. However, an essay from CDC states that women exposure a higher risk of stroke with age increasing. Therefore, the only reason is that this dataset have no enough information to support that gender will introduce difference of stroke. 
+# Abstract
+
+Stroke is the 2nd leading cause of death globally in WHO report. And several effects influence the probability of stroke. Based on data from Kaggle, we find that hypertension, heart disease, and age have a high related to stroke. A model also includes individuals' average glucose level and BMI, giving good predictability of stroke. When setting the threshold as 0.1, which means when the probability of stroke is more significant than 0.1, we say the individual has high stroke risk, the model accuracy is 0.911.
+
+# Introduction
+
+A stroke is a medical condition in which poor blood flow to the brain causes cell death. Signs and symptoms of a stroke may include an inability to move or feel on one side of the body, problems understanding or speaking, dizziness, or loss of vision to one side. According to the World Health Organization (WHO), stroke is the 2nd leading cause of death globally, responsible for approximately 11% of total deaths.
+In this project, I would like to predict the probability a patient gets a stroke based on a data set I get from the Kaggle website. The data set contains each patient's information, including gender, age, marital condition, work type, residence type, average glucose level, BMI, smoking status, and whether suffer from hypertension, heart_disease. And the outcome is a binary column indicating whether each patient gets a stroke.
+I believe this project can give me a better understanding of the main risk factors leading to stroke while helping people to improve their health conditions and prevent getting a stroke.
+
+# Method
+## Data Cleaning and Processing
 
 ```{r}
 Q <- quantile(stroke$bmi, probs=c(.25, .75), na.rm = T)
@@ -69,20 +76,79 @@ iqr <- IQR(df3$age, na.rm = T)
 df3 <- df3%>% filter(age > (Q[1] - 1.5*iqr) & 
                        age < (Q[2] + 1.5*iqr)) 
 
-library(PMCMR)
-library(officer)
-Compare_Dunn_two(df3[,c(12,2:11)])
-df3$age_group[df3$age <= 20] <- "less than 20"
+
+df3$age_group[df3$age <= 20] <- "Younger than 20"
 df3$age_group[df3$age > 20 & df3$age <= 40] <- "Between 20 to 40"
 df3$age_group[df3$age > 40 & df3$age <= 50] <- "Between 40 to 50"
 df3$age_group[df3$age > 50 & df3$age <= 60] <- "Between 50 to 60"
 df3$age_group[df3$age > 60 & df3$age <= 70] <- "Between 60 to 70"
 df3$age_group[df3$age > 70 & df3$age <= 80] <- "Between 70 to 80"
-df3$age_group[df3$age > 80] <- "more than 80"
+df3$age_group[df3$age > 80] <- "Over 80"
+
+
+set.seed(123)
+ind <- sample(2, nrow(df3), replace = TRUE, prob = c(0.8, 0.2))
+set.seed(400)
+train <- na.omit(df3[ind == 1, ])
+test <- df3[ind == 2, ]
+```
+
+The data come from Kaggle: Stroke Prediction Dataset. This data set includes 12 variables and 5110 individuals, including their basic information and two kinds of stroke-related diseases: hypertension and heart disease. 
+
+To better fit the model, I dropped some outliers in our data set's average glucose level, BMI, age, and three continuous variables.
+Also, Considered strokes are highly influenced by age; I divided age into groups.
+Furthermore, Since I want to build a prediction model for stroke, I leave 20 percent of the data to act as a test set and 80 percent as a training dataset.
+
+I get `r nrow(df3)` individuals after dropping outliers and `r ncol(df3)` variables after adding one variable(*age_group*). And Training data set has `r nrow(train)` individuals, test data set has `r nrow(test)` individuals.
+
+## Exploratory Data Analysis
+
+```{r}
+
+Age_plt1 <- df3 %>%
+            ggplot() + 
+            geom_histogram(data = df3, 
+                           aes(x = age), 
+                           binwidth = 10, 
+                           fill = wes_palette("IsleofDogs1")[1], color = "gray") + 
+            theme_minimal() + 
+            theme(plot.title = element_text(size = 15, face = "bold")) +
+            labs(y = "Count", x = "Age (years)")
+
+
+Age_plt2 <- df3 %>%
+            ggplot() +
+            geom_density_ridges_gradient(aes(x = age, y = weather_stroke, fill = weather_stroke), scale = 2, rel_min_height = 0.001) +
+            scale_fill_manual(values = c(wes_palette("Royal2")[2], wes_palette("Royal2")[5])) +
+            theme_minimal() +
+            labs(x = "Age (years)", y = "Stroke" , title = "")
+
+Age_plt3 <- df3 %>% 
+            ggplot() +
+            geom_boxplot(aes(x = weather_stroke, y = age, fill = weather_stroke)) +
+            coord_flip() +
+            theme_minimal() +
+            scale_fill_manual(values = c(wes_palette("Royal2")[2], wes_palette("Royal2")[5])) +
+            labs(x = "Stroke", y = "Age (years)", title = "")
+
+grid.arrange(Age_plt1, Age_plt2, Age_plt3,
+          ncol = 1,
+          nrow = 3)
 
 ```
 
-```{r message=TRUE}
+The upper figure shows most age of our individuals are 25 to 55 years old.
+The medium figure shows that the distribution of age in the stroke group and no stroke group are different.
+The lower figure shows that strokes are highly related to age in this data. The stroke group distributes in older individuals and concentrates on more than 55 years old. And people with no stroke focused on 20 to 55 years old. So I decided age group into 7 groups: younger than 20, 20 to 40, then 40 to 80 gap every 10 years old, older than 80. 
+
+```{r}
+Compare_Dunn_two(df3[,c(12,2:11)])
+```
+
+The table uses a pairwise test for multiple comparisons of mean rank sums (Dunn's-Test) to check whether there is a significant difference between two groups (people with stroke & with no stroke) for each variable. The table supports that gender and Residence_type have no significant difference between the two groups. So I will drop these two variables in the model.
+
+
+```{r fig.width=6, fig.height=3}
 # (ggpairs(stroke, columns=c(3:5), aes(colour = stroke, alpha = 0.8)))
 # ggplot(data = stroke) + geom_bar(aes(x = age, fill = stroke, alpha = 0.8), width = 1) + facet_grid(heart_disease~ hypertension) 
   ggplot(data = df3, aes(log(avg_glucose_level), y = weather_stroke,color=age_group)) +
@@ -92,6 +158,12 @@ df3$age_group[df3$age > 80] <- "more than 80"
        age group wether have heart disease",
        x="Average Glucose Level", y = "Stroke") + facet_wrap( ~ heart_disease)
   
+```
+
+The figure shows the relationship between stroke and average glucose level for people with heart disease or not. We can see that the glucose level has a different trend for stroke for different age groups. Individuals who have an age over 80 have a distinct tendency compared with other age groups. Generally, there are different intercepts and slopes for every age group.
+
+
+```{r fig.width=6, fig.height=3}
   ggplot(data = df3, aes(log(bmi), y = weather_stroke,color=age_group)) +
   geom_point(aes(color = weather_stroke),alpha = .6, position = "jitter", show.legend = F) +
      geom_smooth(formula=y~x,method="lm",aes(group=age_group),se=F)+
@@ -101,81 +173,86 @@ df3$age_group[df3$age > 80] <- "more than 80"
        x="BMI", y = "Stroke")+ facet_wrap( ~ heart_disease, scales = "free")
 ```
 
+Similarly, the figure shows the relationship between stroke and BMI for different age groups. And the intercepts and slopes for each group are different. 
+
+## Model Fitting
+
+In the beginning, I transfer the average glucose level and BMI into a log scale. Then according to the result of EDA, I use age group as a category, add variables in the model. And for each class, the model has different intercepts and slopes. Except for gender and resident type, I also find that ever_maried and smoking_status are useless to make a difference to build an accurate model. After choosing the smallest AIC, certain final model is :
+
+$$ logit(stroke = 1) = \beta_0 + \beta_1hypertension + \beta_2 heart_disease+ \alpha$$
+$$ \alpha = c_1 log(average\ glucose) + c_2 log(BMI)$$
 
 ```{r}
-set.seed(123)
-ind <- sample(2, nrow(df3), replace = TRUE, prob = c(0.8, 0.2))
-set.seed(400)
-train <- na.omit(df3[ind == 1, ])
-test <- df3[ind == 2, ]
 
-library(lme4)
-model1 <- glmer(weather_stroke ~ hypertension + heart_disease + ever_married + work_type + avg_glucose_level + bmi + smoking_status + (1|age_group), family = binomial(link = "logit"), data = df3) 
-library(VGAM)
-summ(model1, exp = T)
-plot(allEffects(model1))
-summary(model1)
-# model2 <- glmer(weather_stroke ~ heart_disease + ever_married + work_type + avg_glucose_level + bmi + smoking_status + (1+hypertension  |age_group), family = binomial(link = "logit"), data = df3) 
-# summary(model2)
+model1 <- glmer(weather_stroke ~ hypertension + heart_disease + ever_married + work_type + avg_glucose_level + bmi + smoking_status + (1|age_group), family = binomial(link = "logit"), data = train) 
 
-model3 <- glmer(weather_stroke ~  avg_glucose_level + bmi  + (1+ hypertension+ heart_disease+ ever_married + work_type+ smoking_status|age_group) , family = binomial(link = "logit"), data = train) 
-summary(model3)
-model4 <- glmer(weather_stroke ~   hypertension +ever_married + heart_disease   + smoking_status + (1 + log(avg_glucose_level) + log(bmi)|age_group), family = binomial(link = "logit"), data = train)
-summary(model4)
-model5 <- glmer(weather_stroke ~   hypertension + ever_married   + smoking_status + (-1 + log(avg_glucose_level) + log(bmi)|age_group) + (1|heart_disease), family = binomial(link = "logit"), data = train)
-summary(model5)
-model6 <- glmer(weather_stroke ~   hypertension+ ever_married  + heart_disease+ smoking_status + (-1 + log(avg_glucose_level) + log(bmi)|age_group) , family = binomial(link = "logit"), data = train)
-summary(model6)
 
-model7 <- glmer(weather_stroke ~   hypertension+ ever_married  + heart_disease + (-1 + log(avg_glucose_level) + log(bmi)|age_group) , family = binomial(link = "logit"), data = train)
-summary(model7)
+model7 <- glmer(weather_stroke ~   hypertension  + heart_disease + (-1 + log(avg_glucose_level) + log(bmi)|age_group) , family = binomial(link = "logit"), data = train)
+# summary(model7)
 
-model8 <- glmer(weather_stroke ~   hypertension  + heart_disease + log(avg_glucose_level)+ (-1  + log(bmi)|age_group) , family = binomial(link = "logit"), data = train)
-summary(model8)
-
+coef <- as.data.frame(coef(model7)$age_group)
+coef <- cbind(row.names(coef), coef)
+names(coef)[1] <- "Age_group"
+flextable(coef) %>% autofit() %>% fit_to_width(7.5)
 ```
 
+# Result
+
+## Model  coefficient
+
 ```{r}
 
+total_coef <- data.frame("Age_gorup" = coef$Age_group ,"log(avg_glucose_level)" = coef$`log(avg_glucose_level)`,  "log(bmi)"= coef$`log(bmi)`, "Intercept" = coef$`(Intercept)`)
 
 
 ```
 
-```{r}
-library(arm)
+The model is varing slope between age groups and varing intercepts between disease groups (hypertension and heart disease). For example, if someone over 80 and who has hypertension and heart disease, the model predict wheather he or she stroke is :
+$$ logit(stroke) = -1.9 + 0.84log(glucose_level) -0.76log(BMI)$$
+The -1.9 eaquals to $-3.2+ 0.76+ 0.54$.
 
-binnedplot(fitted(model8),resid(model8,type="response"),main="Binned residual plot for model6")
+## Model validation
+For check the model result, we plot the binned residual plot and ROC curve.
+
+```{r}
+
+par(mfrow = c(1,2))
 binnedplot(fitted(model7),resid(model7,type="response"),main="Binned residual plot for model6")
+invisible(plot(roc(train$weather_stroke,fitted(model7)), print.thres = c(.1, .5), col = "red", main = "ROC curves: logistic model" ,print.auc = T))
 
 ```
 
+The most point located between the grey lines means most bins of residuals are significant.
+Also, for the right plot, the AUC of the model is 0.832. When we set the decision threshold to .1, the sensitivity was 0.33, and the specificity was 0.94.  Likewise, when we set the decision threshold to 0.5, the sensitivity was 0, and the specificity was 1.
+ 
+Also when I use the model to predict in the test data set:
 
 ```{r}
-library(caret)
-pred <- ifelse(predict(model7, newdata = test, type = "response") >= .2, "Yes", "No")
+
+pred <- ifelse(predict(model7, newdata = test, type = "response") >= .1, "Yes", "No")
 pred <- factor(pred,  levels = c('Yes','No'), labels=c('Yes','No'))
 test$weather_stroke <- factor(test$weather_stroke, levels = c(1, 0), labels=c('Yes','No'))
-confusionMatrix(pred, test$weather_stroke)
-
+flextable(as.data.frame(confusionMatrix(pred, test$weather_stroke)$table))
 ```
 
-```{r}
-library(pROC)
+The Accuracy = 1 - (FP + FN) / Total, the accuracy of this model is 0.911. 
 
-invisible(plot(roc(train$weather_stroke,fitted(model7)), print.thres = c(.1, .5), col = "red", main = "ROC curves: logistic model 7 (red) vs. logistic model 2 (blue)" ,print.auc = T))
-invisible(plot(roc(train$weather_stroke,
-                   fitted(model8)),
-               col = "blue", 
-               main = "ROC curves: logistic model 1 (red) vs. logistic model 2 (blue)",print.auc = T, add = T))
+# Discussion
 
+Generally speaking, the model fitted includes almost all information od individuals and has a good ability to predict individuals who have similar characteristics with the individuals in the dataset. And through the EDA, we also find people over 80 who have hypertension and heart disease will have a relatively high risk of stroke compared with other age groups in the same disease group or other disease groups who are also over 80.
 
+However, since this data set is an imbalanced data set, we should balance the imbalance at first and then do the analysis. Also, the model same to be overfit and with a lower sensibility. What's more,an essay from CDC states that women exposure a higher risk of stroke with age increasing. Therefore, in the future, we should add more represent sample and more related variables to get a better fit.
 
+# Citation
 
-```
+[1] Course Notes for IS 6489, Statistics and Predictive Analytics, Jeff Webb
+https://bookdown.org/jefftemplewebb/IS-6489/
 
+[2] https://en.wikipedia.org/wiki/Stroke.
 
+[3] https://www.kaggle.com/collinsakal/stroke-prediction-eda.
 
-
+[4] Regression and othe stories, Adrew Gelman etc.
 
 
 # Appendix
@@ -201,19 +278,58 @@ boxplot(df3$avg_glucose_level, horizontal = T,
 ```{r}
 # heart_disease, ever-married, work_type, avg_gluse, bmi, age(every 20), age:married
 
-for (i in 2:6) {
-  for(j in 1:(12-i)){
-    print(ggpairs(stroke, columns=c(i,(i+j)), aes(colour = stroke, alpha = 0.8)))
-  }
-}
+# for (i in 2:6) {
+#   for(j in 1:(12-i)){
+#     print(ggpairs(stroke, columns=c(i,(i+j)), aes(colour = stroke, alpha = 0.8)))
+#   }
+# }
 
 ```
 
-```{r}
-library(sjPlot)
-library(sjmisc)
-library(lme4)
+## Model fit 
 
-sjmisc::sjp.lmer(model4, type = "re.qq")
+```{r}
+model2 <- glmer(weather_stroke ~ heart_disease + ever_married + work_type + avg_glucose_level + bmi + smoking_status + (1+hypertension  |age_group), family = binomial(link = "logit"), data = train)
+summary(model2)
+
+# model3 <- glmer(weather_stroke ~  avg_glucose_level + bmi  + (1+ hypertension+ heart_disease+ ever_married + work_type+ smoking_status|age_group) , family = binomial(link = "logit"), data = train)
+# summary(model3)
+model4 <- glmer(weather_stroke ~   hypertension +ever_married + heart_disease   + smoking_status + (1 + log(avg_glucose_level) + log(bmi)|age_group), family = binomial(link = "logit"), data = train)
+summary(model4)
+model5 <- glmer(weather_stroke ~   hypertension + ever_married   + smoking_status + (-1 + log(avg_glucose_level) + log(bmi)|age_group) + (1|heart_disease), family = binomial(link = "logit"), data = train)
+summary(model5)
+
+model6 <- glmer(weather_stroke ~   hypertension+ ever_married  + heart_disease+ smoking_status + (-1 + log(avg_glucose_level) + log(bmi)|age_group) , family = binomial(link = "logit"), data = train)
+summary(model6)
+model8 <- glmer(weather_stroke ~   hypertension  + heart_disease + log(avg_glucose_level)+ (-1  + log(bmi)|age_group) , family = binomial(link = "logit"), data = train)
+summary(model8)
+```
+
+```{r}
+invisible(plot(roc(train$weather_stroke,
+                   fitted(model1)),
+               col = "blue", 
+               main = "ROC curves: logistic model comparation"))
+invisible(plot(roc(train$weather_stroke,
+                   fitted(model2)),
+               col = "pink", 
+               add = T))
+invisible(plot(roc(train$weather_stroke,
+                   fitted(model4)),
+               col = "grey", 
+               add = T))
+invisible(plot(roc(train$weather_stroke,
+                   fitted(model5)),
+               col = "black", 
+               add = T))
+invisible(plot(roc(train$weather_stroke,
+                   fitted(model6)),
+               col = "orange", 
+               add = T))
+invisible(plot(roc(train$weather_stroke,
+                   fitted(model7)),
+               col = "red", 
+               add = T,print.auc = T))
+
 ```
 
